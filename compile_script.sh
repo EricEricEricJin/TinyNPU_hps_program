@@ -1,0 +1,1 @@
+ gcc -std=c11 -mfp16-format=ieee layernorm_test.c -o layernorm_test
