@@ -22,36 +22,40 @@ int main()
         printf("NPU init failed.\n");
         return -1;
     }
-    printf("NPU init done.\n");    
+    log("NPU init done.");    
 
     read_file_to_mem("mem_w.bin", (void*)SDRAM_W_BASE, 176*176+16);
-    printf("Weight loaded.\n");
+    log("Weight loaded.");
     read_file_to_mem("mem_x.bin", (void*)SDRAM_XY_BASE, 176);
-    printf("Input loaded.\n");
+    log("Input loaded.");
 
     npu_fetch(&npu, 0, 0);
     npu_wait(&npu, FETCH_DONE);
-    printf("Fetch done.\n");
+    log("Fetch done.");
 
     npu_load(&npu, 0, 0, 166);
     npu_wait(&npu, LDST_DONE);
-    printf("Load done.\n");
+    log("Load done.");
 
     npu_move(&npu, 0, 0x200, false, false, 1);
     npu_wait(&npu, MOVE_DONE);
-    printf("Move done.\n");
+    log("Move done.");
 
     npu_exec(&npu, 0);
     npu_wait(&npu, STMM_0_DONE);
-    printf("Exec done.\n");
+    log("Exec done.");
 
     npu_move(&npu, 0x208, 167, false, false, 1);
     npu_wait(&npu, MOVE_DONE);
-    printf("Move done.\n");
+    log("Move done.");
     
     npu_store(&npu, 0x10000, 167, 1);
     npu_wait(&npu, LDST_DONE);
-    printf("Store done.\n");
+    log("Store done.");
+
+#ifdef SIM
+    return 0;
+#endif
 
     printf("Checking result: \n");
     // exit(1);

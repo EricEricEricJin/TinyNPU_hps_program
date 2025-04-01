@@ -28,6 +28,21 @@
 #define H2F_OFFSET 0x00
 #define F2H_OFFSET 0x04
 
+#if (__x86_64__)
+#define SIM
+#endif
+
+#ifdef SIM
+#define log(...) printf("$display(\"%s\");\n", __VA_ARGS__)
+#else
+#define log(...)             \
+    do                       \
+    {                        \
+        printf(__VA_ARGS__); \
+        printf("\n");        \
+    } while (0)
+#endif
+
 enum
 {
     MOVE_DONE = 1 << 31,
@@ -37,31 +52,32 @@ enum
     // todo
 };
 
-typedef struct npu* npu_t;
+typedef struct npu *npu_t;
 
 struct npu
 {
-    char* mem_dev;
 
-    void* pio_base;
+    char *mem_dev;
+
+    void *pio_base;
     size_t pio_span;
     size_t h2f_offset;
     size_t f2h_offset;
 
-    void* sdram_w_base;
+    void *sdram_w_base;
     size_t sdram_w_span;
 
-    void* sdram_xy_base;
+    volatile void *sdram_xy_base;
     size_t sdram_xy_span;
 
     int mem_fd;
 
-    uint32_t* pio_map;
-    uint32_t* pio_map_h2f;
-    uint32_t* pio_map_f2h;
+    volatile uint32_t *pio_map;
+    volatile uint32_t *pio_map_h2f;
+    volatile uint32_t *pio_map_f2h;
 
-    uint32_t* sdram_map_w;
-    uint32_t* sdram_map_xy;
+    volatile uint32_t *sdram_map_w;
+    volatile uint32_t *sdram_map_xy;
 };
 
 int npu_init(npu_t npu);
@@ -81,4 +97,3 @@ void npu_deinit(npu_t npu);
 int read_file_to_mem(const char *fp, void *buf, size_t n_bytes);
 
 #endif
-
