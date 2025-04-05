@@ -28,21 +28,6 @@
 #define H2F_OFFSET 0x00
 #define F2H_OFFSET 0x04
 
-#if (__x86_64__)
-#define SIM
-#endif
-
-#ifdef SIM
-#define log(...) printf("$display(\"%s\");\n", __VA_ARGS__)
-#else
-#define log(...)             \
-    do                       \
-    {                        \
-        printf(__VA_ARGS__); \
-        printf("\n");        \
-    } while (0)
-#endif
-
 enum
 {
     MOVE_DONE = 1 << 31,

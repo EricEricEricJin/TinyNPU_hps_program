@@ -1,19 +1,9 @@
 #include "npu_api.h"
 
-#ifdef SIM
-
-#define WRITE_INST(inst) \
-    printf("h2f_pio32=32'h%x;h2f_write=1;@(negedge clk)h2f_write=0;\n", inst);
-
-#define WAIT_DONE(mask) \
-    printf("@(posedge |(f2h_pio32 & 32'h%x));@(negedge clk);\n", mask);
-
-#else
-
-#define WRITE_INST(inst)             \
-    do                               \
-    {                                \
-        *(npu->pio_map_h2f) = (inst) \
+#define WRITE_INST(inst)              \
+    do                                \
+    {                                 \
+        *(npu->pio_map_h2f) = (inst); \
     } while (0)
 
 #define WAIT_DONE(mask)                   \
@@ -24,12 +14,10 @@
         {                                 \
             usleep(1);                    \
             status = *(npu->pio_map_f2h); \
-            if (status & (mask))            \
+            if (status & (mask))          \
                 break;                    \
         }                                 \
     } while (0)
-
-#endif
 
 enum op_t
 {
@@ -45,22 +33,8 @@ enum fun_t
     FUN_EXEC = 0b1,
 };
 
-// void *map_mem(int fd, off_t base, size_t span)
-// {
-//     void *ret = mmap(NULL, span, PROT_READ | PROT_WRITE, MAP_SHARED, fd, base);
-//     if (ret == MAP_FAILED)
-//     {
-//         perror("Error mapping memory.");
-//         return NULL;
-//     }
-//     return ret;
-// }
-
 int npu_init(npu_t npu)
 {
-#ifdef SIM
-    return 0;
-#else
 
     // open memory
     npu->mem_fd = open(npu->mem_dev, O_RDWR | O_SYNC);
@@ -104,8 +78,6 @@ int npu_init(npu_t npu)
 
     printf("xy_map=%p, w_map=%p.\n", npu->sdram_map_xy, npu->sdram_map_w);
     return 0;
-
-#endif
 }
 
 void npu_wait(npu_t npu, uint32_t mask)
@@ -123,7 +95,6 @@ uint32_t inst_load_store(size_t sdram_span, uint32_t op, size_t sdram_offset, ui
     uint32_t inst = 0;
     inst |= (op << 30) | (rf_addr << 21) | (sdram_offset << 8) | line_num;
 
-    // printf("Load/Store inst: 0x%08x\n", inst);
     return inst;
 }
 
@@ -146,8 +117,6 @@ void npu_move(npu_t npu, uint32_t src_addr, uint32_t dst_addr, bool src_freeze, 
     assert(line_num < 0xff);
 
     uint32_t inst = (OP_MOVE << 30) | (src_addr << 20) | (dst_addr << 10) | (src_freeze << 9) | (dst_freeze << 8) | line_num;
-    // printf("Move inst: 0x%08x\n", inst);
-    // *(npu->pio_map_h2f) = inst;
     WRITE_INST(inst);
 }
 
@@ -158,38 +127,26 @@ void npu_fetch(npu_t npu, uint32_t unit, size_t sdram_offset)
     sdram_offset >>= 4;
 
     uint32_t inst = (OP_FETCH_EXEC << 30) | (FUN_FETCH << 29) | (unit << 24) | sdram_offset;
-    // printf("Fetch inst: 0x%08x\n", inst);
-    // *(npu->pio_map_h2f) = inst;
     WRITE_INST(inst);
 }
 
 void npu_exec(npu_t npu, uint32_t unit)
 {
     assert(unit < 32);
-
     uint32_t inst = (OP_FETCH_EXEC << 30) | (FUN_EXEC << 29) | (unit << 24);
-    // printf("Exec inst: 0x%08x\n", inst);
-    // *(npu->pio_map_h2f) = inst;
     WRITE_INST(inst);
 }
 
 void npu_deinit(npu_t npu)
 {
-#ifdef SIM
-    return;
-#else
     munmap(npu->pio_map, npu->pio_span);
     munmap(npu->sdram_map_w, npu->sdram_w_span);
     munmap(npu->sdram_map_xy, npu->sdram_xy_span);
     close(npu->mem_fd);
-#endif
 }
 
 int read_file_to_mem(const char *fp, void *buf, size_t n_bytes)
 {
-#ifdef SIM
-    return n_bytes;
-#else
     FILE *fd;
     fd = fopen(fp, "rb");
     if (fd == NULL)
@@ -201,5 +158,4 @@ int read_file_to_mem(const char *fp, void *buf, size_t n_bytes)
     int ret = fread(buf, sizeof(int8_t), n_bytes, fd);
     fclose(fd);
     return ret;
-#endif
 }
