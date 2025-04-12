@@ -4,6 +4,7 @@
     do                                \
     {                                 \
         *(npu->pio_map_h2f) = (inst); \
+        usleep(1);                    \
     } while (0)
 
 #define WAIT_DONE(mask)                   \
@@ -18,6 +19,13 @@
                 break;                    \
         }                                 \
     } while (0)
+
+long get_time_in_microseconds()
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000000 + tv.tv_usec;
+}
 
 enum op_t
 {
@@ -83,6 +91,12 @@ int npu_init(npu_t npu)
 void npu_wait(npu_t npu, uint32_t mask)
 {
     WAIT_DONE(mask);
+}
+
+bool npu_check(npu_t npu, uint32_t mask)
+{
+    uint32_t status = *(npu->pio_map_f2h);
+    return status & mask;
 }
 
 uint32_t inst_load_store(size_t sdram_span, uint32_t op, size_t sdram_offset, uint32_t rf_addr, uint32_t line_num)
@@ -156,6 +170,21 @@ int read_file_to_mem(const char *fp, void *buf, size_t n_bytes)
     }
 
     int ret = fread(buf, sizeof(int8_t), n_bytes, fd);
+    fclose(fd);
+    return ret;
+}
+
+int write_mem_to_file(const char *fp, const void *buf, size_t n_bytes)
+{
+    FILE *fd;
+    fd = fopen(fp, "wb");
+    if (fd == NULL)
+    {
+        perror("Error opening data file.");
+        return -1;
+    }
+
+    int ret = fwrite(buf, sizeof(int8_t), n_bytes, fd);
     fclose(fd);
     return ret;
 }

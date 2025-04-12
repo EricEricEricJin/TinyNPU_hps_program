@@ -17,6 +17,10 @@
 
 #include <signal.h>
 
+#include <sys/time.h>
+
+long get_time_in_microseconds();
+
 #define SDRAM_W_BASE 0x20000000
 #define SDRAM_W_SPAN 0x10000000
 
@@ -30,12 +34,30 @@
 
 enum
 {
+    STMM_0 = 0,
+    STMM_1 = 1,
+    STMM_2 = 2,
+    STMM_3 = 3,
+    LAYERNORM = 4,
+    LUT_0 = 8,
+    LUT_1 = 9,
+};
+
+typedef enum
+{
+    IDLE,
+    FETCH,
+    EXEC
+} state_t;
+
+enum
+{
     MOVE_DONE = 1 << 31,
     LDST_DONE = 1 << 30,
     FETCH_DONE = 1 << 28,
-    STMM_0_DONE = 1,
-    // todo
 };
+
+#define EU_DONE(unit) (1 << (unit))
 
 typedef struct npu *npu_t;
 
@@ -68,6 +90,7 @@ struct npu
 int npu_init(npu_t npu);
 
 void npu_wait(npu_t npu, uint32_t mask);
+bool npu_check(npu_t npu, uint32_t mask);
 
 void npu_load(npu_t npu, size_t sdram_offset, uint32_t rf_addr, uint32_t line_num);
 void npu_store(npu_t npu, size_t sdram_offset, uint32_t rf_addr, uint32_t line_num);
@@ -80,5 +103,7 @@ void npu_exec(npu_t npu, uint32_t unit);
 void npu_deinit(npu_t npu);
 
 int read_file_to_mem(const char *fp, void *buf, size_t n_bytes);
+
+int write_mem_to_file(const char *fp, const void *buf, size_t n_bytes);
 
 #endif

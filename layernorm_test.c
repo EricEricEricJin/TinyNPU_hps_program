@@ -28,47 +28,51 @@ int main()
     read_file_to_mem("gamma_hi.bin", (void*)(SDRAM_W_BASE+176), 176);
     read_file_to_mem("beta_scaled.bin", (void*)(SDRAM_W_BASE+352), 176);
     read_file_to_mem("x_768.bin", (void*)SDRAM_XY_BASE, 176*166);
-    printf("W and X loaded.\n");
-    for (int i = 0; i < 16; i++)
-    {
-        printf("%x\t%x\t%x\n", 
-            ((uint8_t*)npu.sdram_map_w)[i], 
-            ((uint8_t*)npu.sdram_map_w+176)[i], 
-            ((uint8_t*)npu.sdram_map_w+176*2)[i]);
-    }
+    printf("W and X loaded. ");
+    // for (int i = 0; i < 16; i++)
+    // {
+    //     printf("%x\t%x\t%x\n", 
+    //         ((uint8_t*)npu.sdram_map_w)[i], 
+    //         ((uint8_t*)npu.sdram_map_w+176)[i], 
+    //         ((uint8_t*)npu.sdram_map_w+176*2)[i]);
+    // }
+    long t0 = get_time_in_microseconds();
 
     npu_fetch(&npu, 4, 0);
     npu_wait(&npu, FETCH_DONE);
-    printf("Fetch done.\n");
+    printf("Fetch done. ");
 
     npu_load(&npu, 0, 0, 166);
     npu_wait(&npu, LDST_DONE);
-    printf("Load done.\n");
+    printf("Load done. ");
 
 
     npu_move(&npu, 0, 0x210, false, false, 1);
     npu_wait(&npu, MOVE_DONE);
-    printf("Move done.\n");
+    printf("Move done. ");
 
     npu_exec(&npu, 4);
     npu_wait(&npu, 1 << 4);
-    printf("Exec done.\n");
+    printf("Exec done. ");
 
     npu_move(&npu, 0x218, 167, false, false, 1);
     npu_wait(&npu, MOVE_DONE);
-    printf("Move done.\n");
+    printf("Move done. ");
 
     npu_store(&npu, 0x11000, 167, 1);
     npu_wait(&npu, LDST_DONE);
-    printf("Store done.\n");
+    printf("Store done. ");
+
+    long t1 = get_time_in_microseconds();
 
     printf("Checking result: \n");
     int8_t* dst_ptr = (int8_t*)(npu.sdram_xy_base) + 0x11000;
     for (int i = 0; i < 176; i++)
     {
-        printf("%d,", dst_ptr[i]);
+        printf("%d ", dst_ptr[i]);
     }
     printf("\nCheck done.\n");
+    printf("Time taken: %ld us\n", t1 - t0);
     npu_deinit(&npu);
     return 0;
 }

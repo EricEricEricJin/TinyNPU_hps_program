@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "mm_headers.h": "c"
+        "mm_headers.h": "c",
+        "npu_api.h": "c"
     }
 }
