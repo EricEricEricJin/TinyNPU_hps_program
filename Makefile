@@ -1,4 +1,4 @@
-.PHONY: npu stmm layernorm lut fc
+.PHONY: npu stmm layernorm lut fc fc_opt
 
 stmm:
 	scp npu_api.h root@169.254.66.88:~/matmul_test/
@@ -19,4 +19,9 @@ fc:
 	scp npu_api.h root@169.254.66.88:~/fc_test/
 	scp npu_api.c root@169.254.66.88:~/fc_test/
 	scp fc_infer.c root@169.254.66.88:~/fc_test/
-	
+
+fc_opt:
+	scp npu_api.h root@169.254.66.88:~/fc_test/
+	scp npu_api.c root@169.254.66.88:~/fc_test/
+	scp fc_infer_opt.c root@169.254.66.88:~/fc_test/
+

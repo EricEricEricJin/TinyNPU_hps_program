@@ -2,12 +2,14 @@
 
 #define N (166)
 
+#define BATCH 2
+#define BN (N/BATCH)
+
 int8_t residual_sum(int8_t a, int8_t b, float sa, float sb, int8_t z)
 {
     return (int8_t) (sa*a + sb*b + z);
 }
 
-uint64_t time_us[N+1];
 
 int main()
 {
@@ -41,7 +43,7 @@ int main()
 
     // ---------- Mapped SRC, Mapped DST, final output array ----------
     const int8_t* src = (int8_t*)(SDRAM_XY_BASE);
-    const int8_t* dst = (int8_t*)(SDRAM_XY_BASE + 0x10000);
+    // const int8_t* dst = (int8_t*)(SDRAM_XY_BASE + 0x10000);
     int8_t final_output[N][176] = {0};
 
     // ---------- NPU Initialization ----------
@@ -88,14 +90,19 @@ int main()
     int8_t mul_lut[0xff];
     read_file_to_mem("lut_mul_0.bin", (void*)mul_lut, 256);
 
+    int8_t x0[N][176];
+
     // Load Input into SDRAM
     // Input
-    read_file_to_mem("x_768.bin", (void*)src, 176*N);
-
+    read_file_to_mem("x_768.bin", (void*)x0, 176*N);
+    memcpy(src, x0, 176*N);
+    
     printf("W and X loaded.\n");
-
+    
     // ---------- Load fixed params into NPU ----------
-    time_us[0] = get_time_in_microseconds();
+    long t0 = get_time_in_microseconds();
+    
+    npu_load(&npu, 0, 0, N);
 
     npu_fetch(&npu, LAYERNORM, GAMMA_LO_OFFSET);
     npu_wait(&npu, FETCH_DONE);
@@ -107,94 +114,22 @@ int main()
     npu_wait(&npu, FETCH_DONE);
     
     printf("LN, LUT0, LUT1 Fetch done.\n");
-    
-    // Load inputs into NPU
-    npu_load(&npu, 0, 0, N);
-    printf("Input Load done.\n");
 
-    // Load STMM0 into NPU for the first time
-    npu_fetch(&npu, STMM_0, W0_OFFSET);
-    npu_wait(&npu, FETCH_DONE);
-            
-    npu_fetch(&npu, STMM_1, W1_OFFSET);
-    npu_wait(&npu, FETCH_DONE);
-
-    npu_fetch(&npu, STMM_2, W2_OFFSET);
-    npu_wait(&npu, FETCH_DONE);
-    
-    npu_fetch(&npu, STMM_3, W3_OFFSET);
-    npu_wait(&npu, FETCH_DONE);
-    printf("first-time STMM0, STMM1, STMM2, STMM3 Fetch done.\n");    
-
+    // Layer Norm
     for (int i = 0; i < N; i++)
     {
-        // Layer Norm
         npu_move(&npu, i, 0x210, false, false, 1);
         npu_wait(&npu, MOVE_DONE);
         npu_exec(&npu, LAYERNORM);
         npu_wait(&npu, EU_DONE(LAYERNORM));
-        npu_move(&npu, 0x218, 167, false, false, 1);
+        npu_move(&npu, 0x218, i, false, false, 1);
         npu_wait(&npu, MOVE_DONE);
+    }
 
-        // FC1
-        npu_move(&npu, 167, 0x200, true, false, 4);
-        npu_wait(&npu, MOVE_DONE); 
-
-        npu_wait(&npu, FETCH_DONE);
-        
-        npu_exec(&npu, STMM_0);
-        npu_exec(&npu, STMM_1);
-        npu_exec(&npu, STMM_2);
-        npu_exec(&npu, STMM_3);
-        npu_wait(&npu, EU_DONE(STMM_0));
-        npu_wait(&npu, EU_DONE(STMM_1));
-        npu_wait(&npu, EU_DONE(STMM_2));
-        npu_wait(&npu, EU_DONE(STMM_3));
-        
-        // Load FC2 weight into StMM
-        npu_fetch(&npu, STMM_0, FC2_W0_OFFSET);
-        npu_wait(&npu, FETCH_DONE);
-        npu_fetch(&npu, STMM_1, FC2_W1_OFFSET);
-        npu_wait(&npu, FETCH_DONE);
-        npu_fetch(&npu, STMM_2, FC2_W2_OFFSET);
-        npu_wait(&npu, FETCH_DONE);
-        npu_fetch(&npu, STMM_3, FC2_W3_OFFSET);
-
-        npu_move(&npu, 0x208, 167, false, false, 4);
-        npu_wait(&npu, MOVE_DONE);
-
-
-        // SILU LUT
-        for (int j = 0; j < 2; j++)
-        {
-            npu_move(&npu, 167+j*2, 0x220, false, false, 2);
-            npu_wait(&npu, MOVE_DONE);
-            
-            npu_exec(&npu, LUT_0);
-            npu_exec(&npu, LUT_1);
-            npu_wait(&npu, EU_DONE(LUT_0));
-            npu_wait(&npu, EU_DONE(LUT_1));
-
-            npu_move(&npu, 0x228, 167+j*2, false, false, 2);
-            npu_wait(&npu, MOVE_DONE);
-        }
-
-        // FC2
-        npu_move(&npu, 167, 0x200, false, false, 4);
-        npu_wait(&npu, MOVE_DONE);
-
-        npu_wait(&npu, FETCH_DONE);
-
-        npu_exec(&npu, STMM_0);
-        npu_exec(&npu, STMM_1);
-        npu_exec(&npu, STMM_2);
-        npu_exec(&npu, STMM_3);
-        npu_wait(&npu, EU_DONE(STMM_0));
-        npu_wait(&npu, EU_DONE(STMM_1));
-        npu_wait(&npu, EU_DONE(STMM_2));
-        npu_wait(&npu, EU_DONE(STMM_3));
-
-        // Load FC1 param
+    // FC1->LUT->FC2
+    for (int b = 0; b < BATCH; b++)
+    {
+        // Fetch FC1
         npu_fetch(&npu, STMM_0, W0_OFFSET);
         npu_wait(&npu, FETCH_DONE);
         npu_fetch(&npu, STMM_1, W1_OFFSET);
@@ -202,28 +137,101 @@ int main()
         npu_fetch(&npu, STMM_2, W2_OFFSET);
         npu_wait(&npu, FETCH_DONE);
         npu_fetch(&npu, STMM_3, W3_OFFSET);
-        
-        npu_move(&npu, 0x208, 167, false, false, 4);
-        npu_wait(&npu, MOVE_DONE);
+        npu_wait(&npu, FETCH_DONE);
 
-        // Store 
-        npu_store(&npu, 0x10000, 167, 4);
+        printf("STMM0, STMM1, STMM2, STMM3 Fetch done.\n");    
+
+        // FC1 -> LUT
+        for (int i = 0; i < BN; i++)
+        {
+            npu_move(&npu, b*BN + i, 0x200, true, false, 4);
+            npu_wait(&npu, MOVE_DONE); 
+            
+            npu_exec(&npu, STMM_0);
+            npu_exec(&npu, STMM_1);
+            npu_exec(&npu, STMM_2);
+            npu_exec(&npu, STMM_3);
+            npu_wait(&npu, EU_DONE(STMM_0));
+            npu_wait(&npu, EU_DONE(STMM_1));
+            npu_wait(&npu, EU_DONE(STMM_2));
+            npu_wait(&npu, EU_DONE(STMM_3));
+
+            npu_move(&npu, 0x208, N+1 + i*4, false, false, 4);
+            npu_wait(&npu, MOVE_DONE);
+
+        }
+
+        // Fetch FC2 params
+        npu_fetch(&npu, STMM_0, FC2_W0_OFFSET);
+        npu_wait(&npu, FETCH_DONE);
+        npu_fetch(&npu, STMM_1, FC2_W1_OFFSET);
+        npu_wait(&npu, FETCH_DONE);
+        npu_fetch(&npu, STMM_2, FC2_W2_OFFSET);
+        npu_wait(&npu, FETCH_DONE);
+        npu_fetch(&npu, STMM_3, FC2_W3_OFFSET);
+        npu_wait(&npu, FETCH_DONE);
+        
+        // LUT
+        for (int i = 0; i < BN; i++)
+        {
+            for (int j = 0; j < 2; j++)
+            {
+                npu_move(&npu, N+1 + i*4 + j*2, 0x220, false, false, 2);
+                npu_wait(&npu, MOVE_DONE);
+                
+                npu_exec(&npu, LUT_0);
+                npu_exec(&npu, LUT_1);
+                npu_wait(&npu, EU_DONE(LUT_0));
+                npu_wait(&npu, EU_DONE(LUT_1));
+
+                npu_move(&npu, 0x228, N+1 + i*4 + j*2, false, false, 2);
+                npu_wait(&npu, MOVE_DONE);
+            }
+        }
+
+        // FC2
+        for (int i = 0; i < BN; i++)
+        {
+            npu_move(&npu, N+1 + i*4, 0x200, false, false, 4);
+            npu_wait(&npu, MOVE_DONE);
+
+            npu_exec(&npu, STMM_0);
+            npu_exec(&npu, STMM_1);
+            npu_exec(&npu, STMM_2);
+            npu_exec(&npu, STMM_3);
+            npu_wait(&npu, EU_DONE(STMM_0));
+            npu_wait(&npu, EU_DONE(STMM_1));
+            npu_wait(&npu, EU_DONE(STMM_2));
+            npu_wait(&npu, EU_DONE(STMM_3));
+            npu_move(&npu, 0x208, N+1 + i*4, false, false, 4);
+            npu_wait(&npu, MOVE_DONE);
+        }
+
+        printf("FC2 done.\n");
+
+        // Store
+        npu_store(&npu, BN*176*4*b, N+1, BN*2);
+        npu_wait(&npu, LDST_DONE);
+        npu_store(&npu, BN*176*4*b+BN*2*176, N+1+BN*2, BN*2);
         npu_wait(&npu, LDST_DONE);
 
-        // Sum MUl Sum
-        int8_t tmp;
-        for (int k = 0; k < 176; k++)
+    }
+
+    printf("Done.\n");
+
+    // Sum MUl Sum
+    int8_t tmp;
+    for (int i = 0; i < N; i++)
+    {
+        for (int j = 0; j < 176; j++)
         {
             tmp = 0;
-            for (int j = 0; j < 4; j++)
-                tmp += dst[j*176+k];    
+            for (int k = 0; k < 4; k++)
+                tmp += src[(i*176+j)*4+k];
             tmp = mul_lut[(uint8_t)tmp];
-            tmp = residual_sum(tmp, src[i*176+k], converted_sa, converted_sb, converted_z);
-            final_output[i][k] = tmp;
-        };
-        time_us[i+1] = get_time_in_microseconds();
+            final_output[i][j] = residual_sum(tmp, x0[i][j], converted_sa, converted_sb, converted_z);
+        }
     }
-    // long t1 = get_time_in_microseconds();
 
 
     printf("Check results\n");
@@ -237,8 +245,9 @@ int main()
     npu_deinit(&npu);
     printf("NPU deinit done.\n");
 
-    // printf("Time: %ld us\n", t1 - t0);
-    write_mem_to_file("fc_infer_time.bin", time_us, sizeof(time_us));
+    long t1  = get_time_in_microseconds();
+    printf("Time: %ld us\n", t1 - t0);
+    // write_mem_to_file("fc_infer_time.bin", time_us, sizeof(time_us));
 
     return 0;
 }
